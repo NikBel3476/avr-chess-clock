@@ -7,10 +7,13 @@
 #define LEFT_PLAYER_BUTTON PF4
 #define RIGHT_PLAYER_BUTTON PF5
 #define START_STOP_BUTTON PF6
+#define STARTUP_TIME_IN_SEC 60
 
 volatile uint8_t counter = 0; // Счетчик секунд
-volatile uint16_t timer1 = 60;
-volatile uint16_t timer2 = 60;
+volatile uint16_t timer1 = STARTUP_TIME_IN_SEC;
+volatile uint16_t timer2 = STARTUP_TIME_IN_SEC;
+volatile uint16_t timer1_remaining = 0;
+volatile uint16_t timer2_remaining = 0;
 volatile uint8_t is_game_running = 0;
 volatile uint8_t is_left_player_time = 1;
 
@@ -31,11 +34,8 @@ void update_segment(uint16_t timer, timerSegment* segment) {
 }
 
 int main() {
-	// SREG &= ~(1 << 7);
-	// Настройка вывода управления светодиодом
-	DDRE |= 0b11111111; // All E register is output(disable input)
-	DDRF |= 0b10001111; // All F register is output
-	// PORTE &= ~(1 << PB0); // Выключен на старте МК
+	DDRE |= 0b11111111;
+	DDRF |= 0b10001111;
 
 	timerSegment segment1 = { 0, 0, 0, 0 };
 	timerSegment segment2 = { 0, 0, 0, 0 };
@@ -43,12 +43,11 @@ int main() {
 	PORTF &= 0;
 	PORTE |= 0b11111111;
 
-	// Настройка таймера
 	TCCR1A = 0;
-	TCCR1B = (1 << CS12) | (0 << CS11) | (1 << CS10); // Делитель 1024
-	OCR1A = 0x3D09;																		// 15625 — 1 секунда
-	TCNT1 = 0;																				// Обнуление счетчика
-	TIMSK1 = (1 << OCIE1A);														// Активация прерывания для данного таймера
+	TCCR1B = (1 << CS12) | (0 << CS11) | (1 << CS10);
+	OCR1A = 0x3D09;
+	TCNT1 = 0;
+	TIMSK1 = (1 << OCIE1A);
 
 	SREG |= (1 << 7);
 
@@ -61,46 +60,50 @@ int main() {
 		// left player button handler
 		if ((PINF & (1 << LEFT_PLAYER_BUTTON)) == 0) {
 			_delay_us(10);
-			// Короткая пауза для стабилизации
 			if (left_player_btn_ticks_counter == 0) {
 				is_left_player_time = 1;
+				timer2_remaining = TCNT1;
+				TCNT1 = timer1_remaining;
 			}
-			// Увеличиваем счетчик тиков, пока он не станет равен 10
 			if (left_player_btn_ticks_counter < 10) {
-				left_player_btn_ticks_counter++; // Увеличиваем на 1 счетчик тиков
+				left_player_btn_ticks_counter++;
 			}
 		} else {
-			left_player_btn_ticks_counter = 0; // Обнуление счетчика тиков
+			left_player_btn_ticks_counter = 0;
 		}
 
-		// left player button handler
+		// right player button handler
 		if ((PINF & (1 << RIGHT_PLAYER_BUTTON)) == 0) {
 			_delay_us(10);
-			// Короткая пауза для стабилизации
 			if (right_player_btn_ticks_counter == 0) {
 				is_left_player_time = 0;
+				timer1_remaining = TCNT1;
+				TCNT1 = timer2_remaining;
 			}
-			// Увеличиваем счетчик тиков, пока он не станет равен 10
 			if (right_player_btn_ticks_counter < 10) {
-				right_player_btn_ticks_counter++; // Увеличиваем на 1 счетчик тиков
+				right_player_btn_ticks_counter++;
 			}
 		} else {
-			right_player_btn_ticks_counter = 0; // Обнуление счетчика тиков
+			right_player_btn_ticks_counter = 0;
 		}
 
 		// start stop button handler
 		if ((PINF & (1 << START_STOP_BUTTON)) == 0) {
-			_delay_ms(10);
-			// Короткая пауза для стабилизации
+			_delay_ms(5);
 			if (start_stop_btn_ticks_counter == 0) {
-				is_game_running = !is_game_running;
+				if (timer1 == 0 || timer2 == 0) {
+					timer1 = STARTUP_TIME_IN_SEC;
+					timer2 = STARTUP_TIME_IN_SEC;
+					is_game_running = 0;
+				} else {
+					is_game_running = !is_game_running;
+				}
 			}
-			// Увеличиваем счетчик тиков, пока он не станет равен 10
 			if (start_stop_btn_ticks_counter < 10) {
-				start_stop_btn_ticks_counter++; // Увеличиваем на 1 счетчик тиков
+				start_stop_btn_ticks_counter++;
 			}
 		} else {
-			start_stop_btn_ticks_counter = 0; // Обнуление счетчика тиков
+			start_stop_btn_ticks_counter = 0;
 		}
 
 		// segments update
@@ -112,56 +115,56 @@ int main() {
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment1.fourth;
 		PORTE &= 0b11111110;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 1 digit 2
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment1.third;
 		PORTE &= 0b11111101;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 1 digit 3
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment1.second;
 		PORTE &= 0b11111011;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 1 digit 4
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment1.first;
 		PORTE &= 0b11110111;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 2 digit 1
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment2.fourth;
 		PORTE &= 0b11101111;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 2 digit 2
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment2.third;
 		PORTE &= 0b11011111;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 2 digit 3
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment2.second;
 		PORTE &= 0b10111111;
-		_delay_us(50);
+		_delay_us(100);
 
 		// segment 2 digit 4
 		PORTE |= 0b11111111;
 		DIGIT_SEGMENT &= 0b00000000;
 		DIGIT_SEGMENT |= segment2.first;
 		PORTE &= 0b01111111;
-		_delay_us(50);
+		_delay_us(100);
 		PORTE |= 0b11111111;
 	}
 }
